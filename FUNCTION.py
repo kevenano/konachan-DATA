@@ -18,9 +18,9 @@ def download(
     url, num_retries=3, headers={}, cookie="", params="", reFlag=0, timeout=(30, 300),
 ):
     '''
-    下载函数
-    输入参数reFlag = 0 返回text, 1 返回content, 2 返回resp
-    如下载错误，将返回resp=None
+    下载函数\n
+    输入参数reFlag = 0 返回text, 1 返回content, 2 返回resp\n
+    如下载错误，将返回resp=None\n
     '''
     # print("Downloading: ", url)
     if "user-agent" not in headers:

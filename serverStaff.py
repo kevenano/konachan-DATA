@@ -10,29 +10,27 @@
 '''
 
 # Here put the import lib
-from FUNCTION import download
-from CLASS import DB
+from time import time
 from apscheduler.schedulers.background import BackgroundScheduler
-import time
-
-
-# 业务部分代码
-def job():
-    print(int(time.time()))
-
+from Jobs import dailyJob
 
 # 计划部分代码
 def schedulerPart():
     '''
     计划部分代码
+    每天6点执行一次job中的业务
     '''
     scheduler = BackgroundScheduler()
-    scheduler.add_job(func=job,trigger='interval',seconds=3)
+    # scheduler.add_job(func=dailyJob,trigger='cron', hour=6)
+    # 目标函数参数设置
+    kwargs = {}
+    kwargs['jsonPath'] = r"E:\konachan\log\Test"
+    scheduler.add_job(func=dailyJob, kwargs=kwargs)
     scheduler.start()
     
-
 
 # 入口
 if __name__=="__main__":
     schedulerPart()
-    time.sleep(100)
+    while True:
+        pass
