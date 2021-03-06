@@ -3,7 +3,7 @@
 '''
 @File    :   CLASS.py
 @Desc    :   常用class集合
-@Version :   1.0
+@Version :   2.0
 @Time    :   2021/02/18 17:53:53
 @Author  :   kevenano 
 @Contact :   kevenano@outloook.com
@@ -34,8 +34,7 @@ class DB:
 
     def connect(self):
         self.connection = pymysql.connect(
-            self.host, self.user, self.__passwd, self.database
-        )
+            host=self.host, user=self.user, password=self.__passwd, database=self.database)
         self.cursor = self.connection.cursor()
 
     def commit(self):
@@ -201,13 +200,13 @@ class multiProTask:
             self.shareDict = proManager.dict({})
 
             self.multiPro()
-    
+
             failList = copy.copy(self.failList[:])
             AList = copy.copy(self.AList[:])
             BList = copy.copy(self.BList[:])
             CList = copy.copy(self.CList[:])
             shareDict = {}
-            for k,v in self.shareDict.items():
+            for k, v in self.shareDict.items():
                 shareDict[k] = v
 
             self.failList = copy.copy(failList)
@@ -215,17 +214,17 @@ class multiProTask:
             self.BList = copy.copy(BList)
             self.CList = copy.copy(CList)
             self.shareDict = shareDict
-        
+
             del(failList)
             del(AList)
             del(BList)
             del(CList)
             del(shareDict)
-            
+
             self.afterDeal()
 
             self.endTime = time.time()
-    
+
     def afterDeal(self) -> None:
         '追加任务'
         pass
