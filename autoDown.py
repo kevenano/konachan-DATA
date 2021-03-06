@@ -10,7 +10,6 @@ import copy
 import json
 from pprint import pformat
 from tqdm import tqdm
-from CLASS_DB import DB
 
 lock = threading.Lock()
 
