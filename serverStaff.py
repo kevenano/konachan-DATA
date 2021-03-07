@@ -24,7 +24,7 @@ def schedulerPart():
     # scheduler.add_job(func=dailyJob,trigger='cron', hour=6)
     # 目标函数参数设置
     kwargs = {}
-    kwargs['jsonPath'] = r"E:\konachan\log\Test"
+    kwargs['jobDir'] = r"E:\konachan\dev\Test"
     scheduler.add_job(func=dailyJob, kwargs=kwargs)
     scheduler.start()
     
