@@ -10,6 +10,8 @@
 '''
 
 # Hear put the import lib
+import os
+from pathlib import Path
 import pymysql
 import multiprocessing
 import copy
@@ -117,6 +119,40 @@ class DB:
         flag = self.execute(sql, value)
         self.commit()
         return flag
+    
+    def dump(self, bkDir: Path) -> Path:
+        '''
+        备份\n
+        输入存放备份文件的目录\n
+        成功返回备份文件路径\n
+        失败返回None\n
+        '''
+        if not os.path.exists(bkDir):
+            os.makedirs(bkDir)
+        fileName = time.strftime('%Y%m%d-%H%M%S') + '.sql'
+        bkPath = os.path.join(bkDir, fileName)
+        dumpcmd = f"mysqldump -h{self.host} -u{self.user} -p{self.__passwd} {self.database} > {bkPath}"
+        res = os.system(dumpcmd)
+        if res == 0:
+            return bkPath
+        else:
+            return None
+    
+    def restore(self, bkPath: Path) -> bool:
+        '''
+        还原\n
+        输入.sql文件的路径\n
+        成功返回True
+        失败返回False
+        '''
+        restcmd = f"mysql -h {self.host} -u {self.user} -p {self.__passwd} {self.database} < {bkPath}"
+        res = os.system(restcmd)
+        if res == 0:
+            return True
+        else:
+            return False
+
+
 
 
 # 多进程任务
