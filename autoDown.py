@@ -145,7 +145,7 @@ def downJson(url, urlParams):
 # 更新数据库
 # data必须为字典列表(直接由json.load转换得来)
 # 返回操作失败的项目id
-def updateData(db, tableName, data):
+def updateData(db:DB, tableName, data):
     global typeDic
     failedList = []
     for work in data:
