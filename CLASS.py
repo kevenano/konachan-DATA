@@ -36,7 +36,11 @@ class DB:
 
     def connect(self):
         self.connection = pymysql.connect(
-            host=self.host, user=self.user, password=self.__passwd, database=self.database)
+            host=self.host,
+            user=self.user,
+            password=self.__passwd,
+            database=self.database,
+        )
         self.cursor = self.connection.cursor()
 
     def commit(self):
@@ -48,18 +52,21 @@ class DB:
     def rollback(self):
         self.connection.rollback()
 
-    def execute(self, sql, args=None):
+    def execute(self, sql, args=None) -> None:
+        """
+        执行sql语句\n
+        ⚠务必谨慎使用⚠\n
+        执行错误直接报错\n
+        excute之后记得commit\n
+        """
         try:
             self.cursor.execute(sql, args)
-            return 1
         except pymysql.err.InterfaceError:
             self.connection.ping(reconnect=True)
             self.cursor.execute(sql, args)
-            return 1
         except pymysql.Error as e:
-            # print(e.args[0])
             self.rollback()
-            return e
+            raise e
 
     def createTable(
         self,
@@ -68,59 +75,74 @@ class DB:
         primaryKey="key",
         engine="innodb",
         de_charset="utf8mb4",
-    ):
+    ) -> None:
+        """
+        创建表\n
+        失败直接报错\n
+        """
         sql = """create table `""" + tableName + """`("""
         for clName, clType in columns.items():
             sql = sql + "`" + clName + "`" + " " + clType + ","
         sql = sql + "primary key" + "(`" + primaryKey + "`)" + ")"
         sql = sql + "engine=" + engine + " " + "default charset=" + de_charset
-        flag = self.execute(sql)
-        self.commit()
-        return flag
+        try:
+            self.execute(sql)
+            self.commit()
+        except Exception as e:
+            raise e
 
-    def dropTable(self, tablesName):
+    def dropTable(self, tablesName) -> None:
+        """
+        删除表\n
+        失败直接报错\n
+        """
         sql = """drop table """
         for item in tablesName:
             sql = sql + "`" + item + "`" + ","
         sql = sql[0: len(sql) - 1]
-        flag = self.execute(sql)
-        self.commit()
-        return flag
+        try:
+            self.execute(sql)
+            self.commit()
+        except Exception as e:
+            raise e
 
-    def insert(self, tableName, fileds, values):
+    def insert(self, tableName, fileds, values) -> None:
+        """
+        插入数据\n
+        失败直接报错\n
+        """
         fileds = str(tuple(fileds)).replace("""'""", "`")
         values = str(tuple(values))
         tableName = "`" + tableName + "`"
         sql = """insert into """ + tableName + " "
         sql = sql + fileds + " values " + values
-        flag = self.execute(sql)
-        self.commit()
-        return flag
+        try:
+            self.execute(sql)
+            self.commit()
+        except Exception as e:
+            raise e
 
-    def replace(self, tableName, fileds, values):
-        """替换插入"""
+    def replace(self, tableName, fileds, values) -> None:
+        """
+        替换插入\n
+        失败直接报错\n
+        """
         fileds = str(tuple(fileds)).replace("""'""", "`")
         values = str(tuple(values))
         tableName = "`" + tableName + "`"
         sql = """REPLACE INTO """ + tableName + " "
         sql = sql + fileds + " values " + values
-        flag = self.execute(sql)
-        self.commit()
-        return flag
+        try:
+            self.execute(sql)
+            self.commit()
+        except Exception as e:
+            raise e
 
     def fetchall(self):
         results = self.cursor.fetchall()
         return results
 
-    def update(self, tableName, filed, value, whereClause):
-        sql = "update " + "`" + tableName + "`" + " "
-        sql = sql + "set " + "`" + filed + "`" + "=%s "
-        sql = sql + whereClause
-        flag = self.execute(sql, value)
-        self.commit()
-        return flag
-    
-    def dump(self, bkDir: Path) -> Path:
+    def dump(self, bkDir: Path):
         '''
         备份\n
         输入存放备份文件的目录\n
@@ -137,7 +159,7 @@ class DB:
             return bkPath
         else:
             return None
-    
+
     def restore(self, bkPath: Path) -> bool:
         '''
         还原\n
@@ -151,8 +173,6 @@ class DB:
             return True
         else:
             return False
-
-
 
 
 # 多进程任务
