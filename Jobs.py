@@ -10,7 +10,6 @@
 '''
 
 # Here put the import lib
-from pathlib import Path
 from FUNCTION import download
 from CLASS import DB
 import os
@@ -67,7 +66,7 @@ typeDic = {
 }
 
 
-def downJson(url: str, urlParams: dict, jsonDir: Path):
+def downJson(url: str, urlParams: dict, jsonDir: str):
     '''
     Json下载函数\n
     下载一份Json，并保存到jsonDir下, 以urlParams中的page命名
@@ -119,7 +118,7 @@ def insertData(db: DB, tableName: str, data: dict) -> None:
             raise e
 
 
-def mtDownJson(threadNum: int, startID: int, jsonDir: Path, maxRetry: int) -> bool:
+def mtDownJson(threadNum: int, startID: int, jsonDir: str, maxRetry: int) -> bool:
     """
     多线程下载Json\n
     下载完成返回True\n
@@ -132,16 +131,16 @@ def mtDownJson(threadNum: int, startID: int, jsonDir: Path, maxRetry: int) -> bo
         startID = 1
     if maxRetry < 0:
         maxRetry = 0
-    if not jsonDir.is_dir():
+    if not os.path.isdir(jsonDir):
         raise "Not a dir!"
-    
+
     logging.info("开始多线程下载json...")
     pageList = [t+1 for t in range(threadNum)]  # 先给一个page列表
     retryCnt = 0  # 失败重试次数
     url = "https://konachan.com/post.json"
     params = {"limit": 50, "tags": f"id:>={startID} order:id",
               "page": pageList[0]}
-    
+
     # 循环获取所有指定页面json
     finishFlag = 0  # 下载结束标志
     global endFlag  # 末页标志
@@ -195,15 +194,14 @@ def mtDownJson(threadNum: int, startID: int, jsonDir: Path, maxRetry: int) -> bo
                 """没有失败项了"""
                 logging.info("全部下载完毕！")
                 finishFlag = 1
-    
+
     if len(jsDownFailedList) == 0:
         return True
     else:
         return False
 
 
-
-def dailyJob(jobDir: Path):
+def dailyJob(jobDir: str, host: str, user: str, passwd: str, database: str):
     '''
     日常任务\n
     包含完整的错误处理\n
@@ -236,7 +234,8 @@ def dailyJob(jobDir: Path):
 
     # 链接到数据库
     logging.info("正在连接数据库...")
-    db = DB("localhost", "root", "qo4hr[Pxm7W5", "konachan")
+    # db = DB("localhost", "root", "qo4hr[Pxm7W5", "konachan")
+    db = DB(host, user, passwd, database)
     try:
         db.connect()
         logging.info("成功连接到数据库！")
@@ -276,7 +275,7 @@ def dailyJob(jobDir: Path):
         logging.error("下载出错!")
         logging.debug(str(e))
         logging.info("********************************************")
-    
+
     # # 数据库备份
     # bkPath = db.dump(bkDir)
 
