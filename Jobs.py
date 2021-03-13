@@ -18,12 +18,14 @@ import time
 import threading
 import requests
 import json
+import logging
+import copy
 
 
 # 全局变量
 lock = threading.Lock()
 jsDownFailedList = []
-finishFlag = 0
+endFlag = 0  # 末页记录
 typeDic = {
     "id": "int",
     "tags": "text",
@@ -71,25 +73,22 @@ def downJson(url: str, urlParams: dict, jsonDir: Path):
     下载一份Json，并保存到jsonDir下, 以urlParams中的page命名
     '''
     global jsDownFailedList
-    global finishFlag
+    global endFlag
     # 打印提示信息
     if lock.acquire():
-        print("Deal with page ", urlParams["page"])
-        print()
+        logging.info("Deal with page " + str(urlParams["page"]))
         lock.release()
     # 尝试下载json
     res = download(url=url, params=urlParams, reFlag=2, timeout=(30, 60))
     if (not isinstance(res, requests.models.Response) or res.status_code != 200) and lock.acquire():
         # 下载失败，更新错误列表
         jsDownFailedList.append(urlParams["page"])
-        print(f"Page {urlParams['page']} fail...")
-        print()
+        logging.warning(f"Page {urlParams['page']} fail...")
         lock.release()
     elif len(res.content) < 100 and lock.acquire():
         # 空的json页, 直接判定下载结束
-        finishFlag = 1
-        print("Page "+str(urlParams["page"])+" empty page!")
-        print()
+        endFlag = 1
+        logging.info("Page "+str(urlParams["page"])+" empty page!")
         lock.release()
     else:
         # 下载成功，保存json
@@ -100,11 +99,12 @@ def downJson(url: str, urlParams: dict, jsonDir: Path):
         del tmpPath
 
 
-def insertData(db: DB, tableName: str, data: dict):
+def insertData(db: DB, tableName: str, data: dict) -> None:
     """
     更新数据库\n
     replace方法\n
     data必须为字典列表(直接由json.load转换得来)\n
+    失败直接报错\n
     """
     global typeDic
     for work in data:
@@ -113,15 +113,100 @@ def insertData(db: DB, tableName: str, data: dict):
                 work[k] = str(v)
             if typeDic[k] == "int" and type(v) is not int:
                 work[k] = -1
-        flag = db.replace(tableName, tuple(work.keys()), tuple(work.values()))
-        if flag != 1:
-            """更新失败"""
-            raise Exception("Faild to insert data!")
+        try:
+            db.replace(tableName, tuple(work.keys()), tuple(work.values()))
+        except Exception as e:
+            raise e
+
+
+def mtDownJson(threadNum: int, startID: int, jsonDir: Path, maxRetry: int) -> bool:
+    """
+    多线程下载Json\n
+    下载完成返回True\n
+    否则返回False
+    """
+    # 参数检查
+    if threadNum < 1:
+        threadNum = 1
+    if startID < 1:
+        startID = 1
+    if maxRetry < 0:
+        maxRetry = 0
+    if not jsonDir.is_dir():
+        raise "Not a dir!"
+    
+    logging.info("开始多线程下载json...")
+    pageList = [t+1 for t in range(threadNum)]  # 先给一个page列表
+    retryCnt = 0  # 失败重试次数
+    url = "https://konachan.com/post.json"
+    params = {"limit": 50, "tags": f"id:>={startID} order:id",
+              "page": pageList[0]}
+    
+    # 循环获取所有指定页面json
+    finishFlag = 0  # 下载结束标志
+    global endFlag  # 末页标志
+    global jsDownFailedList
+    # 目标函数参数设置
+    kwargs = {}
+    kwargs['jsonDir'] = jsonDir
+    while finishFlag == 0:
+        if threadNum > len(pageList):
+            "修正线程数"
+            threadNum = len(pageList)
+        # 创建多线程任务
+        thList = []
+        for i in range(threadNum):
+            params["page"] = pageList[i]
+            kwargs['url'] = url
+            kwargs['urlParams'] = params.copy()
+            dlThread = threading.Thread(target=downJson, kwargs=kwargs)
+            thList.append(dlThread)
+            dlThread.start()
+            time.sleep(1)
+        # 等待线程结束
+        for thread in thList:
+            thread.join()
+        # 更新pageList
+        if endFlag == 0:
+            """尚未到达末页"""
+            pageList = [len(pageList)+pageList[t] for t in range(threadNum)]
+        elif endFlag == 1:
+            """已经到达末页"""
+            if len(jsDownFailedList) > 0:
+                """有失败项"""
+                if retryCnt <= maxRetry:
+                    """重试次数未超过上限"""
+                    logging.info("重新下载失败项...")
+                    retryCnt += 1
+                    if len(jsDownFailedList) <= threadNum:
+                        """失败项数小于进程数"""
+                        pageList = copy.copy(jsDownFailedList)
+                        jsDownFailedList = []
+                    else:
+                        """失败项数大于进程数"""
+                        for t in range(threadNum):
+                            pageList.append(jsDownFailedList.pop(0))
+                else:
+                    """重试次数超过上限"""
+                    logging.warning("重试次数超过上限!")
+                    logging.info("剩余失败项："+str(jsDownFailedList.sort()))
+                    finishFlag = 1
+            else:
+                """没有失败项了"""
+                logging.info("全部下载完毕！")
+                finishFlag = 1
+    
+    if len(jsDownFailedList) == 0:
+        return True
+    else:
+        return False
+
 
 
 def dailyJob(jobDir: Path):
     '''
-    日常任务
+    日常任务\n
+    包含完整的错误处理\n
     1. 连接到数据库
     2. 查询现有最大id号
     3. 多线程下载json数据
@@ -134,101 +219,98 @@ def dailyJob(jobDir: Path):
     工作目录结构:\n
     jobDir\n
     └─workDir\n
+    └─backup\n
         └─json\n
     '''
     # 构造工作目录
+    logging.info("正在创建工作目录...")
     workID = int(time.time())
     workDir = os.path.join(jobDir, 'works', str(workID))
-    bkDir = os.path.join(jobDir, "sqlBackup")
+    bkDir = os.path.join(jobDir, "backup")
     jsonDir = os.path.join(workDir, 'json')
     if not os.path.exists(bkDir):
         os.makedirs(bkDir)
     if not os.path.exists(jsonDir):
         os.makedirs(jsonDir)
+    logging.info("工作目录创建完成！")
 
     # 链接到数据库
+    logging.info("正在连接数据库...")
     db = DB("localhost", "root", "qo4hr[Pxm7W5", "konachan")
-    db.connect()
-    db.execute(sql='''SET FOREIGN_KEY_CHECKS = 0 ''')
+    try:
+        db.connect()
+        logging.info("成功连接到数据库！")
+    except Exception as e:
+        logging.critical("连接数据库失败！")
+        logging.debug(str(e))
+        logging.info("********************************************")
+    try:
+        db.execute(sql='''SET FOREIGN_KEY_CHECKS = 0 ''')
+        logging.info("成功设置外键!")
+    except Exception as e:
+        logging.critical("外键设置错误！")
+        logging.debug(str(e))
+        logging.info("********************************************")
 
     # 查询最大id号
-    sql = "SELECT MAX(id) FROM main"
-    flag = db.execute(sql)
-    if flag != 1:
-        # print(flag.args[0])
-        # Todo: Debug
-        db.close()
-        # Todo: detail
-    maxID = db.fetchall()[0][0]
+    try:
+        sql = "SELECT MAX(id) FROM main"
+        db.execute(sql)
+        maxID = db.fetchall()[0][0]
+        logging.info("查询到最大ID："+str(maxID))
+    except Exception as e:
+        logging.critical("查询最大ID出错！")
+        logging.debug(str(e))
+        logging.info("********************************************")
 
     # 多线程下载json数据
-    startID = maxID + 1
-    pageList = [1, 2, 3, 4, 5]  # 先给一个page列表
-    threadNum = len(pageList)
-    url = "https://konachan.com/post.json"
-    params = {"limit": 50, "tags": f"id:>={startID} order:id",
-              "page": pageList[0]}
-    # 循环获取所有指定页面json
-    global finishFlag
-    # 目标函数参数设置
     kwargs = {}
-    kwargs['jsonDir'] = jsonDir
-    while finishFlag == 0:
-        pageCnt = 0  # 完成的任务数
-        # 创建多线程任务
-        thList = []
-        for i in range(threadNum):
-            params["page"] = pageList[pageCnt]
-            kwargs['url'] = url
-            kwargs['urlParams'] = params.copy()
-            dlThread = threading.Thread(target=downJson, kwargs=kwargs)
-            thList.append(dlThread)
-            dlThread.start()
-            time.sleep(1)
-            pageCnt += 1
-        # 等待线程结束
-        for thread in thList:
-            thread.join()
-        # 更新pageList
-        pageList = [i + len(pageList) for i in pageList]
-
-    # 数据库备份
-    bkPath = db.dump(bkDir)
-
-    # 数据库更新
-    jsList = []
-    insertFail = []
-    for folderName, subfolders, fileNames in os.walk(jsonDir):
-        for fileName in fileNames:
-            if fileName.endswith(".json"):
-                jsList.append(os.path.join(folderName, fileName))
-    for file in jsList:
-        try:
-            jsFile = open(file, "r", encoding="utf-8")
-            data = json.load(jsFile)
-            jsFile.close()
-            insertData(db, 'main', data)
-        except Exception as e:
-            db.execute(sql='''SET FOREIGN_KEY_CHECKS = 1 ''')
-            insertFail.append(file)
-
-    # 导出下载地址
-    sql = f"SELECT file_url from main WHERE id >= {startID};"
-    flag = db.execute(sql)
-    if flag != 1:
-        results = ()
-    else:
-        results = db.fetchall()
-    # 写入文档
-    urlFilePath = os.path.join(workDir, 'url.txt')
-    if len(results) > 0:
-        with open(urlFilePath, "w", encoding="utf-8") as fn:
-            for item in results:
-                if item[0] != None:
-                    fn.write(str(item[0])+"\n")
+    kwargs["threadNum"] = 5
+    kwargs["startID"] = maxID+1
+    kwargs["jsonDir"] = jsonDir
+    kwargs["maxRetry"] = 5
+    dlRes = False
+    try:
+        dlRes = mtDownJson(**kwargs)
+    except Exception as e:
+        logging.error("下载出错!")
+        logging.debug(str(e))
+        logging.info("********************************************")
     
-    # 写日志
-    logFilePath = os.path.join(workDir, 'log.txt')
+    # # 数据库备份
+    # bkPath = db.dump(bkDir)
+
+    # # 数据库更新
+    # jsList = []
+    # insertFail = []
+    # for folderName, subfolders, fileNames in os.walk(jsonDir):
+    #     for fileName in fileNames:
+    #         if fileName.endswith(".json"):
+    #             jsList.append(os.path.join(folderName, fileName))
+    # for file in jsList:
+    #     try:
+    #         jsFile = open(file, "r", encoding="utf-8")
+    #         data = json.load(jsFile)
+    #         jsFile.close()
+    #         insertData(db, 'main', data)
+    #     except Exception as e:
+    #         db.execute(sql='''SET FOREIGN_KEY_CHECKS = 1 ''')
+    #         insertFail.append(file)
+
+    # # 导出下载地址
+    # sql = f"SELECT file_url from main WHERE id >= {startID};"
+    # flag = db.execute(sql)
+    # if flag != 1:
+    #     results = ()
+    # else:
+    #     results = db.fetchall()
+    # # 写入文档
+    # urlFilePath = os.path.join(workDir, 'url.txt')
+    # if len(results) > 0:
+    #     with open(urlFilePath, "w", encoding="utf-8") as fn:
+    #         for item in results:
+    #             if item[0] != None:
+    #                 fn.write(str(item[0])+"\n")
 
     # 断开数据库连接
     db.execute(sql='''SET FOREIGN_KEY_CHECKS = 1 ''')
