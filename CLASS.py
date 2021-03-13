@@ -11,7 +11,6 @@
 
 # Hear put the import lib
 import os
-from pathlib import Path
 import pymysql
 import multiprocessing
 import copy
@@ -159,7 +158,7 @@ class DB:
         results = self.cursor.fetchall()
         return results
 
-    def dump(self, bkDir: Path):
+    def dump(self, bkDir: str):
         '''
         备份\n
         输入存放备份文件的目录\n
@@ -177,7 +176,7 @@ class DB:
         else:
             return None
 
-    def restore(self, bkPath: Path) -> bool:
+    def restore(self, bkPath: str) -> bool:
         '''
         还原\n
         输入.sql文件的路径\n
