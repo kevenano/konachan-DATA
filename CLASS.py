@@ -29,24 +29,37 @@ class DB:
     cursor = ""
 
     def __init__(self, host=None, user=None, passwd="", database=None):
+        """
+        初始化数据库对象\n
+        """
         self.host = host
         self.user = user
         self.__passwd = passwd
         self.database = database
 
-    def connect(self):
-        self.connection = pymysql.connect(
-            host=self.host,
-            user=self.user,
-            password=self.__passwd,
-            database=self.database,
-        )
-        self.cursor = self.connection.cursor()
+    def connect(self) -> None:
+        """
+        连接到数据库\n
+        失败直接报错\n
+        """
+        try:
+            self.connection = pymysql.connect(
+                host=self.host,
+                user=self.user,
+                password=self.__passwd,
+                database=self.database,
+            )
+            self.cursor = self.connection.cursor()
+        except Exception as e:
+            raise e
 
     def commit(self):
         self.connection.commit()
 
-    def close(self):
+    def close(self) -> None:
+        """
+        关闭数据库连接\n
+        """
         self.connection.close()
 
     def rollback(self):
@@ -56,8 +69,8 @@ class DB:
         """
         执行sql语句\n
         ⚠务必谨慎使用⚠\n
-        执行错误直接报错\n
-        excute之后记得commit\n
+        执行错误直接报错, 同时自动回退\n
+        excute之后需要commit\n
         """
         try:
             self.cursor.execute(sql, args)
@@ -79,6 +92,7 @@ class DB:
         """
         创建表\n
         失败直接报错\n
+        无需额外commit\n
         """
         sql = """create table `""" + tableName + """`("""
         for clName, clType in columns.items():
@@ -95,6 +109,7 @@ class DB:
         """
         删除表\n
         失败直接报错\n
+        无需额外commit\n
         """
         sql = """drop table """
         for item in tablesName:
@@ -110,6 +125,7 @@ class DB:
         """
         插入数据\n
         失败直接报错\n
+        无需额外commit\n
         """
         fileds = str(tuple(fileds)).replace("""'""", "`")
         values = str(tuple(values))
@@ -126,6 +142,7 @@ class DB:
         """
         替换插入\n
         失败直接报错\n
+        无需额外commit\n
         """
         fileds = str(tuple(fileds)).replace("""'""", "`")
         values = str(tuple(values))
