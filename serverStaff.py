@@ -13,7 +13,9 @@
 from time import time
 from apscheduler.schedulers.background import BackgroundScheduler
 from Jobs import dailyJob
+import logging
 
+logging.basicConfig(level=logging.DEBUG)
 # 计划部分代码
 def schedulerPart():
     '''
@@ -24,7 +26,12 @@ def schedulerPart():
     # scheduler.add_job(func=dailyJob,trigger='cron', hour=6)
     # 目标函数参数设置
     kwargs = {}
-    kwargs['jobDir'] = r"E:\konachan\dev\Test"
+    # kwargs['jobDir'] = r"E:\konachan\dev\Test"
+    kwargs['jobDir'] = r"/home/kevin/Work/Test"
+    kwargs['host'] = 'localhost'
+    kwargs['user'] = 'root'
+    kwargs['passwd'] = 'qhm2012@@@'
+    kwargs['database'] = 'konachan'
     scheduler.add_job(func=dailyJob, kwargs=kwargs)
     scheduler.start()
     
