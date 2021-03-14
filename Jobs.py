@@ -11,7 +11,7 @@
 
 # Here put the import lib
 from FUNCTION import download
-from CLASS import DB
+from CLASS import DB,QQMail
 import os
 import time
 import threading
@@ -20,7 +20,15 @@ import json
 import logging
 import copy
 import timeout_decorator
+import logging
+import logging.config
+import smtplib
+from email.mime.text import MIMEText
+from email.mime.multipart import MIMEMultipart
+from email.header import Header
 
+logging.config.fileConfig('logging.conf')
+# logger = logging.getLogger('dailywork')
 
 # 全局变量
 lock = threading.Lock()
@@ -228,8 +236,10 @@ def dailyJob(jobDir: str, host: str, user: str, passwd: str, database: str):
     failFlag8 = True       # 数据库还原失败标志
     failFlag9 = True       # 导出下载地址失败标志
     failFlag0 = True       # 断开数据库连接失败标志
+    
+    urlFilePath = None      # url列表文件
 
-    @timeout_decorator.timeout(10, use_signals=False)
+    @timeout_decorator.timeout(20, use_signals=False)
     def task1():
         """
         构造工作目录\n
@@ -346,6 +356,7 @@ def dailyJob(jobDir: str, host: str, user: str, passwd: str, database: str):
     def task9(db:DB, maxID:int,workDir:str):
         """
         导出下载地址(更新成功后执行)\n
+        返回urlFilePath\n
         """
         logging.info("正在导出url到文档...")
         sql = f"SELECT file_url from main WHERE id >= {maxID+1};"
@@ -358,6 +369,7 @@ def dailyJob(jobDir: str, host: str, user: str, passwd: str, database: str):
                     if item[0] != None:
                         fn.write(str(item[0])+"\n")
         logging.info("导出url到文档成功！")
+        return urlFilePath
 
     @timeout_decorator.timeout(30, use_signals=False)
     def task0(db:DB):
@@ -368,6 +380,34 @@ def dailyJob(jobDir: str, host: str, user: str, passwd: str, database: str):
         db.execute(sql='''SET FOREIGN_KEY_CHECKS = 1 ''')
         db.close()
         logging.info("成功关闭数据库连接！")
+    
+    @timeout_decorator.timeout(60, use_signals=False)
+    def sendMail(briefLog:str,detailLog:str,urlPath:str=None):
+        """
+        发送日志到邮箱\n
+        """
+        logging.info("发送日志到邮箱...")
+        class Mail(QQMail):
+            def creatMessage(self):
+                """创建邮件"""
+                # 邮件头
+                self.message['From'] = Header('kevin-s', 'utf-8')
+                self.message['To'] = Header('kevin-r', 'utf-8')
+                self.message['Subject'] = Header('服务器进程日志', 'utf-8')
+
+                # 邮件正文
+                content = MIMEText('这是今日的程序运行日志及url列表.','plain','utf-8')
+                self.message.attach(content)
+
+                # 添加附件
+                self.addAtt(briefLog,'brief.log')
+                self.addAtt(detailLog,'detail.log')
+                if urlPath:
+                    self.addAtt(urlPath, 'urls.txt')
+        newMail = Mail(sender='kevin-san@qq.com',passwd='gyuyuzsewsqaebba',receivers=["kevin_ali@aliyun.com"])
+        newMail.send()
+        logging.info("日志发送成功！")
+
 
     # 构造工作目录
     try:
@@ -455,7 +495,7 @@ def dailyJob(jobDir: str, host: str, user: str, passwd: str, database: str):
     # 导出下载地址(更新成功后执行)
     if not failFlag7:
         try:
-            task9(db,maxID,workDir)
+            urlFilePath = task9(db,maxID,workDir)
             failFlag9 = False
         except Exception as e:
             failFlag9 = True
@@ -471,3 +511,11 @@ def dailyJob(jobDir: str, host: str, user: str, passwd: str, database: str):
             failFlag0 = True
             logging.error("关闭数据库连接时发生错误！")
             logging.debug(str(e))
+    
+    # 发送日志及url
+    try:
+        sendMail('brief.log','detail.log',urlFilePath)
+    except Exception as e:
+        logging.error("邮件发送失败！")
+        logging.debug(str(e))
+

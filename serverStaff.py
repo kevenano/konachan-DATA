@@ -13,9 +13,7 @@
 from time import time
 from apscheduler.schedulers.background import BackgroundScheduler
 from Jobs import dailyJob
-import logging
 
-logging.basicConfig(level=logging.DEBUG)
 # 计划部分代码
 def schedulerPart():
     '''
