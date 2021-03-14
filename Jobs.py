@@ -209,7 +209,7 @@ def dailyJob(jobDir: str, host: str, user: str, passwd: str, database: str):
     5. 数据库更新
     6. 数据库回滚
     7. 导出下载地址
-    8. 写日志
+    8. 关闭数据库连接
     9. 发邮件\n
     工作目录结构:\n
     jobDir\n
@@ -347,7 +347,7 @@ def dailyJob(jobDir: str, host: str, user: str, passwd: str, database: str):
     if failFlag7:
         try:
             logging.info("正在还原数据库...")
-            bkPath = r"/home/kevin/Work/Test/backup/20210314-122255.zip"
+            # bkPath = r"/home/kevin/Work/Test/backup/20210314-122255.zip"
             db.restore(bkPath)
             logging.info("成功还原数据库!")
             failFlag8 = False
@@ -363,7 +363,7 @@ def dailyJob(jobDir: str, host: str, user: str, passwd: str, database: str):
             sql = f"SELECT file_url from main WHERE id >= {maxID+1};"
             db.execute(sql)
             results = db.fetchall()
-            urlFilePath = os.path.joi(workDir, 'url.txt')
+            urlFilePath = os.path.join(workDir, 'url.txt')
             if len(results) > 0:
                 with open(urlFilePath, "w", encoding="utf-8") as fn:
                     for item in results:
