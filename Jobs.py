@@ -19,6 +19,7 @@ import requests
 import json
 import logging
 import copy
+import timeout_decorator
 
 
 # 全局变量
@@ -227,8 +228,13 @@ def dailyJob(jobDir: str, host: str, user: str, passwd: str, database: str):
     failFlag8 = True       # 数据库还原失败标志
     failFlag9 = True       # 导出下载地址失败标志
     failFlag0 = True       # 断开数据库连接失败标志
-    # 构造工作目录
-    try:
+
+    @timeout_decorator.timeout(10, use_signals=False)
+    def task1():
+        """
+        构造工作目录\n
+        返回 (workDir,bkDir,jsonDir)\n
+        """
         logging.info("正在创建工作目录...")
         workID = int(time.time())
         workDir = os.path.join(jobDir, 'works', str(workID))
@@ -239,6 +245,133 @@ def dailyJob(jobDir: str, host: str, user: str, passwd: str, database: str):
         if not os.path.exists(jsonDir):
             os.makedirs(jsonDir)
         logging.info("工作目录创建完成！")
+        return workDir,bkDir,jsonDir
+
+    # @timeout_decorator.timeout(30, use_signals=False)
+    def task2():
+        """
+        数据库连接测试\n
+        由于db不可序列化，固不使用timeout_decorator\n
+        """
+        logging.info("正在连接数据库...")
+        # db = DB("localhost", "root", "qo4hr[Pxm7W5", "konachan")
+        db = DB(host, user, passwd, database)
+        db.connect()
+        logging.info("成功连接到数据库！")
+        return db
+
+    @timeout_decorator.timeout(5, use_signals=False)
+    def task3(db:DB):
+        """
+        设置外键\n
+        """
+        db.execute(sql='''SET FOREIGN_KEY_CHECKS = 0 ''')
+        logging.info("成功设置外键!")
+
+    @timeout_decorator.timeout(10, use_signals=False)
+    def task4(db:DB) -> int:
+        """
+        查询最大id号\n
+        返回maxID
+        """
+        sql = "SELECT MAX(id) FROM main"
+        db.execute(sql)
+        maxID = int(db.fetchall()[0][0])
+        logging.info("查询到最大ID："+str(maxID))
+        return maxID
+
+    @timeout_decorator.timeout(600, use_signals=False)
+    def task5(jsonDir:str, maxID:int):
+        """
+        多线程下载json数据\n
+        """
+        logging.info("开始下载json...")
+        kwargs = {}
+        kwargs["threadNum"] = 5
+        kwargs["startID"] = maxID+1
+        kwargs["jsonDir"] = jsonDir
+        kwargs["maxRetry"] = 5
+        mtDownJson(**kwargs)
+        logging.info("成功完成下载任务！")
+
+    @timeout_decorator.timeout(1500, use_signals=False)
+    def task6(db:DB,bkDir:str):
+        """
+        数据库备份\n
+        返回bkPath\n
+        """
+        logging.info("正在备份数据库...")
+        bkPath = db.dump(bkDir)
+        logging.info("数据库备份完毕!")
+        return bkPath
+
+    @timeout_decorator.timeout(600, use_signals=False)
+    def task7(db:DB,jsonDir:str):
+        """
+        数据库更新\n
+        返回insertFail\n
+        """
+        logging.info("正在更新数据库...")
+        jsList = []
+        insertFail = []
+        for folderName, _, fileNames in os.walk(jsonDir):
+            for fileName in fileNames:
+                if fileName.endswith(".json"):
+                    jsList.append(os.path.join(folderName, fileName))
+        for file in jsList:
+            try:
+                jsFile = open(file, "r", encoding="utf-8")
+                data = json.load(jsFile)
+                jsFile.close()
+                insertData(db, 'main', data)
+            except Exception as e:
+                logging.error("json转储失败！")
+                logging.info("失败json: "+str(file))
+                logging.debug(str(e))
+                insertFail.append(file)
+        logging.info("数据库更新完毕！")
+        return insertFail
+
+    @timeout_decorator.timeout(300, use_signals=False)
+    def task8(db:DB,bkPath:str):
+        """
+        数据库还原(更新出错后执行)\n
+        """
+        logging.info("正在还原数据库...")
+        # bkPath = r"/home/kevin/Work/Test/backup/20210314-122255.zip"
+        db.restore(bkPath)
+        logging.info("成功还原数据库!")
+
+    @timeout_decorator.timeout(300, use_signals=False)
+    def task9(db:DB, maxID:int,workDir:str):
+        """
+        导出下载地址(更新成功后执行)\n
+        """
+        logging.info("正在导出url到文档...")
+        sql = f"SELECT file_url from main WHERE id >= {maxID+1};"
+        db.execute(sql)
+        results = db.fetchall()
+        urlFilePath = os.path.join(workDir, 'url.txt')
+        if len(results) > 0:
+            with open(urlFilePath, "w", encoding="utf-8") as fn:
+                for item in results:
+                    if item[0] != None:
+                        fn.write(str(item[0])+"\n")
+        logging.info("导出url到文档成功！")
+
+    @timeout_decorator.timeout(30, use_signals=False)
+    def task0(db:DB):
+        """
+        断开数据库连接(只要数据库连接成功就执行)\n
+        """
+        logging.info("正在关闭数据库连接...")
+        db.execute(sql='''SET FOREIGN_KEY_CHECKS = 1 ''')
+        db.close()
+        logging.info("成功关闭数据库连接！")
+
+    # 构造工作目录
+    try:
+        workDir,bkDir,jsonDir = task1()
         failFlag1 = False
     except Exception as e:
         logging.error("创建工作目录失败！")
@@ -248,23 +381,18 @@ def dailyJob(jobDir: str, host: str, user: str, passwd: str, database: str):
     # 链接到数据库
     if not failFlag1:
         try:
-            logging.info("正在连接数据库...")
-            # db = DB("localhost", "root", "qo4hr[Pxm7W5", "konachan")
-            db = DB(host, user, passwd, database)
-            db.connect()
-            logging.info("成功连接到数据库！")
+            db = task2()
             failFlag2 = False
         except Exception as e:
             failFlag2 = True
             logging.critical("连接数据库失败！")
             logging.debug(str(e))
             logging.info("********************************************")
-    
+
     # 设置外键
     if not failFlag2:
         try:
-            db.execute(sql='''SET FOREIGN_KEY_CHECKS = 0 ''')
-            logging.info("成功设置外键!")
+            task3(db)
             failFlag3 = False
         except Exception as e:
             failFlag3 = True
@@ -275,10 +403,7 @@ def dailyJob(jobDir: str, host: str, user: str, passwd: str, database: str):
     # 查询最大id号
     if not failFlag3:
         try:
-            sql = "SELECT MAX(id) FROM main"
-            db.execute(sql)
-            maxID = db.fetchall()[0][0]
-            logging.info("查询到最大ID："+str(maxID))
+            maxID = task4(db)
             failFlag4 = False
         except Exception as e:
             failFlag4 = True
@@ -289,14 +414,7 @@ def dailyJob(jobDir: str, host: str, user: str, passwd: str, database: str):
     # 多线程下载json数据
     if not failFlag4:
         try:
-            logging.info("开始下载json...")
-            kwargs = {}
-            kwargs["threadNum"] = 5
-            kwargs["startID"] = maxID+1
-            kwargs["jsonDir"] = jsonDir
-            kwargs["maxRetry"] = 5
-            mtDownJson(**kwargs)
-            logging.info("成功完成下载任务！")
+            task5(jsonDir,maxID)
             failFlag5 = False
         except Exception as e:
             failFlag5 = True
@@ -307,9 +425,7 @@ def dailyJob(jobDir: str, host: str, user: str, passwd: str, database: str):
     # 数据库备份
     if not failFlag5:
         try:
-            logging.info("正在备份数据库...")
-            bkPath = db.dump(bkDir)
-            logging.info("数据库备份完毕!")
+            bkPath = task6(db,bkDir)
             failFlag6 = False
         except Exception as e:
             failFlag6 = True
@@ -319,24 +435,7 @@ def dailyJob(jobDir: str, host: str, user: str, passwd: str, database: str):
     # 数据库更新
     if not failFlag6:
         try:
-            logging.info("正在更新数据库...")
-            jsList = []
-            insertFail = []
-            for folderName, _, fileNames in os.walk(jsonDir):
-                for fileName in fileNames:
-                    if fileName.endswith(".json"):
-                        jsList.append(os.path.join(folderName, fileName))
-            for file in jsList:
-                try:
-                    jsFile = open(file, "r", encoding="utf-8")
-                    data = json.load(jsFile)
-                    jsFile.close()
-                    insertData(db, 'main', data)
-                except Exception as e:
-                    logging.error("json转储失败！")
-                    logging.info("失败json: "+str(file))
-                    logging.debug(str(e))
-                    insertFail.append(file)
+            task7(db,jsonDir)
             failFlag7 = False
         except Exception as e:
             failFlag7 = True
@@ -344,12 +443,9 @@ def dailyJob(jobDir: str, host: str, user: str, passwd: str, database: str):
             logging.debug(str(e))
 
     # 数据库还原(更新出错后执行)
-    if failFlag7:
+    if failFlag7 and not failFlag6:
         try:
-            logging.info("正在还原数据库...")
-            # bkPath = r"/home/kevin/Work/Test/backup/20210314-122255.zip"
-            db.restore(bkPath)
-            logging.info("成功还原数据库!")
+            task8(db,bkPath)
             failFlag8 = False
         except Exception as e:
             failFlag8 = True
@@ -359,17 +455,7 @@ def dailyJob(jobDir: str, host: str, user: str, passwd: str, database: str):
     # 导出下载地址(更新成功后执行)
     if not failFlag7:
         try:
-            logging.info("正在导出url到文档...")
-            sql = f"SELECT file_url from main WHERE id >= {maxID+1};"
-            db.execute(sql)
-            results = db.fetchall()
-            urlFilePath = os.path.join(workDir, 'url.txt')
-            if len(results) > 0:
-                with open(urlFilePath, "w", encoding="utf-8") as fn:
-                    for item in results:
-                        if item[0] != None:
-                            fn.write(str(item[0])+"\n")
-            logging.info("导出url到文档成功！")
+            task9(db,maxID,workDir)
             failFlag9 = False
         except Exception as e:
             failFlag9 = True
@@ -379,10 +465,7 @@ def dailyJob(jobDir: str, host: str, user: str, passwd: str, database: str):
     # 断开数据库连接(只要数据库连接成功就执行)
     if not failFlag2:
         try:
-            logging.info("正在关闭数据库连接...")
-            db.execute(sql='''SET FOREIGN_KEY_CHECKS = 1 ''')
-            db.close()
-            logging.info("成功关闭数据库连接！")
+            task0(db)
             failFlag0 = False
         except Exception as e:
             failFlag0 = True
