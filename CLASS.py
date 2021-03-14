@@ -5,7 +5,7 @@
 @Desc    :   常用class集合
 @Version :   2.0
 @Time    :   2021/02/18 17:53:53
-@Author  :   kevenano 
+@Author  :   kevenano
 @Contact :   kevenano@outloook.com
 '''
 
@@ -15,6 +15,7 @@ import pymysql
 import multiprocessing
 import copy
 import time
+import zipfile
 
 
 # 数据库类
@@ -161,34 +162,52 @@ class DB:
     def dump(self, bkDir: str):
         '''
         备份\n
+        使用bz2算法创建压缩文件\n
         输入存放备份文件的目录\n
-        成功返回备份文件路径\n
-        失败返回None\n
+        成功返回压缩备份文件路径\n
+        失败直接报错\n
         '''
         if not os.path.exists(bkDir):
             os.makedirs(bkDir)
-        fileName = time.strftime('%Y%m%d-%H%M%S') + '.sql'
-        bkPath = os.path.join(bkDir, fileName)
-        dumpcmd = f"mysqldump -h{self.host} -u{self.user} -p{self.__passwd} {self.database} > {bkPath}"
+        fileName = time.strftime('%Y%m%d-%H%M%S')
+        sqlPath = os.path.join(bkDir, fileName + '.sql')
+        cmpPath = os.path.join(bkDir, fileName + '.zip')
+        # dumpcmd = f"mysqldump -h{self.host} -u{self.user} -p{self.__passwd} {self.database} > {sqlPath} > /dev/null 2>&1"
+        dumpcmd = f"mysqldump -h{self.host} -u{self.user} -p{self.__passwd} {self.database} > {sqlPath}"
         res = os.system(dumpcmd)
         if res == 0:
-            return bkPath
+            try:
+                with zipfile.ZipFile(cmpPath, 'w') as z:
+                    z.write(filename=sqlPath, arcname=os.path.basename(
+                        sqlPath), compress_type=zipfile.ZIP_BZIP2, compresslevel=1)
+                os.remove(sqlPath)
+                return cmpPath
+            except Exception as e:
+                raise e
         else:
-            return None
+            raise 'Fail to make backup!'
 
-    def restore(self, bkPath: str) -> bool:
+    def restore(self, zipPath: str) -> bool:
         '''
         还原\n
-        输入.sql文件的路径\n
-        成功返回True
-        失败返回False
+        输入.zip文件的路径\n
+        成功返回True\n
+        失败直接报错\n
         '''
-        restcmd = f"mysql -h {self.host} -u {self.user} -p {self.__passwd} {self.database} < {bkPath}"
+        try:
+            with zipfile.ZipFile(zipPath, 'r') as z:
+                sqlPath = os.path.join(os.path.dirname(zipPath), z.namelist()[0])
+                z.extractall(path=os.path.dirname(zipPath))
+        except Exception as e:
+            raise e
+        # restcmd = f"mysql -h{self.host} -u{self.user} -p{self.__passwd} {self.database} < {sqlPath} > /dev/null 2>&1"
+        restcmd = f"mysql -h{self.host} -u{self.user} -p{self.__passwd} {self.database} < {sqlPath}"
         res = os.system(restcmd)
+        os.remove(sqlPath)
         if res == 0:
             return True
         else:
-            return False
+            raise 'Fail to restore database!'
 
 
 # 多进程任务
