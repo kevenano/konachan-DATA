@@ -49,3 +49,4 @@ if __name__=="__main__":
 
     # 启动服务器进程
     schedulerPart(jobDir,testFlag)
+    time.sleep(31536000)
