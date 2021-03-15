@@ -35,21 +35,17 @@ def schedulerPart(jobDir:str, testFlag:int=1):
     if testFlag:
         scheduler.add_job(func=dailyJob, kwargs=kwargs)
     else:
-        scheduler.add_job(func=dailyJob, trigger='cron', hour=8, kwargs=kwargs)
+        scheduler.add_job(func=dailyJob, trigger='cron', hour=6, kwargs=kwargs)
     scheduler.start()
     
 
 # 入口
 if __name__=="__main__":
     # 预处理
-    if len(sys.argv)<3:
-        print("Usage: python serverStaff.py [jobDir] [testFlag]")
-        exit()
-    jobDir = sys.argv[1]
+    jobDir = r"/home/work"
     if not os.path.isdir(jobDir):
         os.makedirs(jobDir)
-    os.chdir(jobDir)
-    testFlag = int(sys.argv[2])
+    testFlag = 0
 
     # 启动服务器进程
     schedulerPart(jobDir,testFlag)
