@@ -11,7 +11,7 @@
 
 # Here put the import lib
 from CLASS import test
-from time import time
+from time import time,sleep
 from apscheduler.schedulers.background import BackgroundScheduler
 from Jobs import dailyJob
 import sys
@@ -49,4 +49,4 @@ if __name__=="__main__":
 
     # 启动服务器进程
     schedulerPart(jobDir,testFlag)
-    time.sleep(31536000)
+    sleep(31536000)
