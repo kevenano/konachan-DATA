@@ -207,7 +207,7 @@ def mtDownJson(threadNum: int, startID: int, jsonDir: str, maxRetry: int):
         raise '下载未完成！'
 
 
-def dailyJob(jobDir: str, host: str, user: str, passwd: str, database: str):
+def dailyJob(jobDir: str, dbPar: dict, mailPar: dict):
     '''
     日常任务\n
     包含完整的错误处理\n
@@ -265,7 +265,7 @@ def dailyJob(jobDir: str, host: str, user: str, passwd: str, database: str):
         """
         logging.info("正在连接数据库...")
         # db = DB("localhost", "root", "qo4hr[Pxm7W5", "konachan")
-        db = DB(host, user, passwd, database)
+        db = DB(**dbPar)
         db.connect()
         logging.info("成功连接到数据库！")
         return db
@@ -404,7 +404,7 @@ def dailyJob(jobDir: str, host: str, user: str, passwd: str, database: str):
                 self.addAtt(detailLog,'detail.log')
                 if urlPath:
                     self.addAtt(urlPath, 'urls.txt')
-        newMail = Mail(sender='kevin-san@qq.com',passwd='gyuyuzsewsqaebba',receivers=["kevin_ali@aliyun.com"])
+        newMail = Mail(**mailPar)
         newMail.send()
         logging.info("日志发送成功！")
 
