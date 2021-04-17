@@ -33,11 +33,12 @@ class DB:
     connection = ""
     cursor = ""
 
-    def __init__(self, host=None, user=None, passwd="", database=None):
+    def __init__(self, host=None, port=None, user=None, passwd="", database=None):
         """
         初始化数据库对象\n
         """
         self.host = host
+        self.port = port
         self.user = user
         self.__passwd = passwd
         self.database = database
