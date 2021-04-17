@@ -77,11 +77,6 @@ def readConfig(confFile: str = 'server.conf'):
     trigerPar['hour'] = cf.get('TRIGER', 'hour')
     trigerPar['minute'] = cf.get('TRIGER', 'minute')
 
-    # pprint(jobDir)
-    # pprint(dbPar)
-    # pprint(mailPar)
-    # pprint(trigerPar)
-
     return jobDir, dbPar, mailPar, trigerPar
 
 
@@ -91,9 +86,9 @@ if __name__ == "__main__":
     # 预处理
     if not os.path.isdir(jobDir):
         os.makedirs(jobDir)
-    testFlag = 1
+    testFlag = 0
 
     # 启动服务器进程
     schedulerPart(jobDir, dbPar, mailPar, trigerPar, testFlag)
-    # sleep(31536000)
-    sleep(360)
+    sleep(31536000)
+    # sleep(3600)
