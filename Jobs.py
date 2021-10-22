@@ -75,7 +75,7 @@ typeDic = {
 }
 
 
-def downJson(url: str, urlParams: dict, jsonDir: str):
+def downJson(url: str, urlParams: dict, jsonDir: str, proxies:dict):
     '''
     Json下载函数\n
     下载一份Json，并保存到jsonDir下, 以urlParams中的page命名
@@ -87,7 +87,7 @@ def downJson(url: str, urlParams: dict, jsonDir: str):
         logging.info("Deal with page " + str(urlParams["page"]))
         lock.release()
     # 尝试下载json
-    res = download(url=url, params=urlParams, reFlag=2, timeout=(30, 60))
+    res = download(url=url, params=urlParams, reFlag=2, timeout=(30, 60),proxies=proxies)
     if (not isinstance(res, requests.models.Response) or res.status_code != 200) and lock.acquire():
         # 下载失败，更新错误列表
         jsDownFailedList.append(urlParams["page"])
@@ -127,7 +127,7 @@ def insertData(db: DB, tableName: str, data: dict) -> None:
             raise e
 
 
-def mtDownJson(threadNum: int, startID: int, jsonDir: str, maxRetry: int):
+def mtDownJson(threadNum: int, startID: int, jsonDir: str, maxRetry: int, proxies:dict):
     """
     多线程下载Json\n
     下载失败直接报错\n
@@ -166,6 +166,7 @@ def mtDownJson(threadNum: int, startID: int, jsonDir: str, maxRetry: int):
             params["page"] = pageList[i]
             kwargs['url'] = url
             kwargs['urlParams'] = params.copy()
+            kwargs['proxies'] = proxies.copy()
             dlThread = threading.Thread(target=downJson, kwargs=kwargs)
             thList.append(dlThread)
             dlThread.start()
@@ -207,7 +208,7 @@ def mtDownJson(threadNum: int, startID: int, jsonDir: str, maxRetry: int):
         raise '下载未完成！'
 
 
-def dailyJob(jobDir: str, dbPar: dict, mailPar: dict):
+def dailyJob(jobDir: str, dbPar: dict, mailPar: dict, proxies:dict):
     '''
     日常任务\n
     包含完整的错误处理\n
@@ -301,6 +302,7 @@ def dailyJob(jobDir: str, dbPar: dict, mailPar: dict):
         kwargs["startID"] = maxID+1
         kwargs["jsonDir"] = jsonDir
         kwargs["maxRetry"] = 5
+        kwargs["proxies"] = proxies
         mtDownJson(**kwargs)
         logging.info("成功完成下载任务！")
 

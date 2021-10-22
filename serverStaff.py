@@ -23,7 +23,7 @@ import copy
 
 
 # 计划部分代码
-def schedulerPart(jobDir: str, dbPar: dict, mailPar: dict, trigerPar: dict, testFlag: int = 1):
+def schedulerPart(jobDir: str, dbPar: dict, mailPar: dict, trigerPar: dict, proxies: dict, testFlag: int = 1):
     '''
     计划部分代码
     每天6点执行一次job中的业务
@@ -34,6 +34,7 @@ def schedulerPart(jobDir: str, dbPar: dict, mailPar: dict, trigerPar: dict, test
     kwargs['jobDir'] = jobDir
     kwargs['dbPar'] = dbPar
     kwargs['mailPar'] = mailPar
+    kwargs['proxies'] = proxies
     if testFlag:
         scheduler.add_job(func=dailyJob, kwargs=copy.copy(kwargs))
     else:
@@ -53,6 +54,7 @@ def readConfig(confFile: str = 'server.conf'):
     dbPar = {}
     mailPar = {}
     trigerPar = {}
+    proxies = {}
 
     if os.name == 'nt':
         jobDir = cf.get('JOBDIR', 'windows')
@@ -77,18 +79,21 @@ def readConfig(confFile: str = 'server.conf'):
     trigerPar['hour'] = cf.get('TRIGER', 'hour')
     trigerPar['minute'] = cf.get('TRIGER', 'minute')
 
-    return jobDir, dbPar, mailPar, trigerPar
+    proxies["http"] = cf.get('PROXY', 'http')
+    proxies["https"] = cf.get('PROXY', 'https')
+
+    return jobDir, dbPar, mailPar, trigerPar, proxies
 
 
 # 入口
 if __name__ == "__main__":
-    jobDir, dbPar, mailPar, trigerPar = readConfig()
+    jobDir, dbPar, mailPar, trigerPar, proxies = readConfig()
     # 预处理
     if not os.path.isdir(jobDir):
         os.makedirs(jobDir)
-    testFlag = 0
+    testFlag = 1
 
     # 启动服务器进程
-    schedulerPart(jobDir, dbPar, mailPar, trigerPar, testFlag)
+    schedulerPart(jobDir, dbPar, mailPar, trigerPar, proxies, testFlag)
     sleep(31536000)
     # sleep(3600)
