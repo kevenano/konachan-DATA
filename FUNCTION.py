@@ -15,7 +15,7 @@ import my_fake_useragent as mfua
 
 
 def download(
-    url, num_retries=3, headers={}, cookie="", params="", reFlag=0, timeout=(30, 300),
+    url, num_retries=3, headers={}, cookie="", params="", reFlag=0, timeout=(30, 300),proxies={}
 ):
     '''
     下载函数\n
@@ -28,7 +28,7 @@ def download(
     if cookie != "":
         headers["cookie"] = cookie
     try:
-        resp = requests.get(url, headers=headers, params=params, timeout=timeout)
+        resp = requests.get(url, headers=headers, params=params, timeout=timeout,proxies=proxies)
         resp.close()
         html = resp.text
         content = resp.content

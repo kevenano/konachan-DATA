@@ -13,7 +13,7 @@
 from CLASS import test
 from time import time, sleep
 from apscheduler.schedulers.background import BackgroundScheduler
-from Jobs import dailyJob
+from Jobs import dailyJob, dataUpdate
 import sys
 import os
 import cryptography
@@ -23,7 +23,7 @@ import copy
 
 
 # 计划部分代码
-def schedulerPart(jobDir: str, dbPar: dict, mailPar: dict, trigerPar: dict, testFlag: int = 1):
+def schedulerPart(jobDir: str, dbPar: dict, mailPar: dict, trigerPar: dict, proxies: dict, jobFlag: int = 1):
     '''
     计划部分代码
     每天6点执行一次job中的业务
@@ -34,11 +34,21 @@ def schedulerPart(jobDir: str, dbPar: dict, mailPar: dict, trigerPar: dict, test
     kwargs['jobDir'] = jobDir
     kwargs['dbPar'] = dbPar
     kwargs['mailPar'] = mailPar
-    if testFlag:
-        scheduler.add_job(func=dailyJob, kwargs=copy.copy(kwargs))
-    else:
+    kwargs['proxies'] = proxies
+    if jobFlag == 1:
         scheduler.add_job(func=dailyJob, trigger='cron',
                           **trigerPar, kwargs=copy.copy(kwargs))
+        kwargs['startID'] = 250000
+        kwargs['endID'] = 999999
+        scheduler.add_job(func=dataUpdate, trigger='cron',day_of_week='mon',hour=18,kwargs=copy.copy(kwargs))
+    elif jobFlag == 2:
+        kwargs['startID'] = 1
+        kwargs['endID'] = 999999
+        scheduler.add_job(func=dataUpdate, kwargs=copy.copy(kwargs))
+    elif jobFlag == 3:
+        kwargs['startID'] = 250000
+        kwargs['endID'] = 999999
+        scheduler.add_job(func=dataUpdate, kwargs=copy.copy(kwargs))
     scheduler.start()
 
 
@@ -53,6 +63,7 @@ def readConfig(confFile: str = 'server.conf'):
     dbPar = {}
     mailPar = {}
     trigerPar = {}
+    proxies = {}
 
     if os.name == 'nt':
         jobDir = cf.get('JOBDIR', 'windows')
@@ -77,18 +88,39 @@ def readConfig(confFile: str = 'server.conf'):
     trigerPar['hour'] = cf.get('TRIGER', 'hour')
     trigerPar['minute'] = cf.get('TRIGER', 'minute')
 
-    return jobDir, dbPar, mailPar, trigerPar
+    proxies["http"] = cf.get('PROXY', 'http')
+    proxies["https"] = cf.get('PROXY', 'https')
+
+    return jobDir, dbPar, mailPar, trigerPar, proxies
 
 
 # 入口
 if __name__ == "__main__":
-    jobDir, dbPar, mailPar, trigerPar = readConfig()
+    # 任务选择
+    if len(sys.argv) < 2:
+        print("Usage: python serverStaff.py [jobName]")
+        exit()
+    jobName = sys.argv[1]
+    # print(jobName)
+    jobFlag = 0
+    if jobName.lower() == "daily":
+        jobFlag = 1
+    elif jobName.lower() == "full":
+        jobFlag = 2
+    elif jobName.lower() == "part":
+        jobFlag = 3
+    else:
+        print("No such job!")
+        exit()
+
+    # 读取配置
+    jobDir, dbPar, mailPar, trigerPar, proxies = readConfig()
+
     # 预处理
     if not os.path.isdir(jobDir):
         os.makedirs(jobDir)
-    testFlag = 0
 
     # 启动服务器进程
-    schedulerPart(jobDir, dbPar, mailPar, trigerPar, testFlag)
+    schedulerPart(jobDir, dbPar, mailPar, trigerPar, proxies, jobFlag)
     sleep(31536000)
     # sleep(3600)

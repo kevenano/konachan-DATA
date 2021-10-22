@@ -11,7 +11,7 @@
 
 # Here put the import lib
 from FUNCTION import download
-from CLASS import DB,QQMail
+from CLASS import DB, QQMail
 import os
 import time
 import threading
@@ -75,7 +75,7 @@ typeDic = {
 }
 
 
-def downJson(url: str, urlParams: dict, jsonDir: str):
+def downJson(url: str, urlParams: dict, jsonDir: str, proxies: dict):
     '''
     Json下载函数\n
     下载一份Json，并保存到jsonDir下, 以urlParams中的page命名
@@ -87,7 +87,9 @@ def downJson(url: str, urlParams: dict, jsonDir: str):
         logging.info("Deal with page " + str(urlParams["page"]))
         lock.release()
     # 尝试下载json
-    res = download(url=url, params=urlParams, reFlag=2, timeout=(30, 60))
+    logging.debug(str(urlParams))
+    res = download(url=url, params=urlParams, reFlag=2,
+                   timeout=(30, 60), proxies=proxies)
     if (not isinstance(res, requests.models.Response) or res.status_code != 200) and lock.acquire():
         # 下载失败，更新错误列表
         jsDownFailedList.append(urlParams["page"])
@@ -127,7 +129,7 @@ def insertData(db: DB, tableName: str, data: dict) -> None:
             raise e
 
 
-def mtDownJson(threadNum: int, startID: int, jsonDir: str, maxRetry: int):
+def mtDownJson(threadNum: int, startID: int, limit: int, jsonDir: str, maxRetry: int, proxies: dict, endID: int = 0):
     """
     多线程下载Json\n
     下载失败直接报错\n
@@ -146,8 +148,11 @@ def mtDownJson(threadNum: int, startID: int, jsonDir: str, maxRetry: int):
     pageList = [t+1 for t in range(threadNum)]  # 先给一个page列表
     retryCnt = 0  # 失败重试次数
     url = "https://konachan.com/post.json"
-    params = {"limit": 50, "tags": f"id:>={startID} order:id",
+    params = {"limit": limit, "tags": f"id:>={startID} order:id",
               "page": pageList[0]}
+    if endID > startID:
+        params = {"limit": limit, "tags": f"id:{startID}..{endID} order:id",
+                  "page": pageList[0]}
 
     # 循环获取所有指定页面json
     finishFlag = 0  # 下载结束标志
@@ -166,6 +171,7 @@ def mtDownJson(threadNum: int, startID: int, jsonDir: str, maxRetry: int):
             params["page"] = pageList[i]
             kwargs['url'] = url
             kwargs['urlParams'] = params.copy()
+            kwargs['proxies'] = proxies.copy()
             dlThread = threading.Thread(target=downJson, kwargs=kwargs)
             thList.append(dlThread)
             dlThread.start()
@@ -207,7 +213,7 @@ def mtDownJson(threadNum: int, startID: int, jsonDir: str, maxRetry: int):
         raise '下载未完成！'
 
 
-def dailyJob(jobDir: str, dbPar: dict, mailPar: dict):
+def dailyJob(jobDir: str, dbPar: dict, mailPar: dict, proxies: dict):
     '''
     日常任务\n
     包含完整的错误处理\n
@@ -236,7 +242,7 @@ def dailyJob(jobDir: str, dbPar: dict, mailPar: dict):
     failFlag8 = True       # 数据库还原失败标志
     failFlag9 = True       # 导出下载地址失败标志
     failFlag0 = True       # 断开数据库连接失败标志
-    
+
     urlFilePath = None      # url列表文件
 
     @timeout_decorator.timeout(20, use_signals=False)
@@ -255,7 +261,7 @@ def dailyJob(jobDir: str, dbPar: dict, mailPar: dict):
         if not os.path.exists(jsonDir):
             os.makedirs(jsonDir)
         logging.info("工作目录创建完成！")
-        return workDir,bkDir,jsonDir
+        return workDir, bkDir, jsonDir
 
     # @timeout_decorator.timeout(30, use_signals=False)
     def task2():
@@ -271,7 +277,7 @@ def dailyJob(jobDir: str, dbPar: dict, mailPar: dict):
         return db
 
     @timeout_decorator.timeout(5, use_signals=False)
-    def task3(db:DB):
+    def task3(db: DB):
         """
         设置外键\n
         """
@@ -279,7 +285,7 @@ def dailyJob(jobDir: str, dbPar: dict, mailPar: dict):
         logging.info("成功设置外键!")
 
     @timeout_decorator.timeout(10, use_signals=False)
-    def task4(db:DB) -> int:
+    def task4(db: DB) -> int:
         """
         查询最大id号\n
         返回maxID
@@ -291,7 +297,7 @@ def dailyJob(jobDir: str, dbPar: dict, mailPar: dict):
         return maxID
 
     @timeout_decorator.timeout(600, use_signals=False)
-    def task5(jsonDir:str, maxID:int):
+    def task5(jsonDir: str, maxID: int):
         """
         多线程下载json数据\n
         """
@@ -299,13 +305,15 @@ def dailyJob(jobDir: str, dbPar: dict, mailPar: dict):
         kwargs = {}
         kwargs["threadNum"] = 5
         kwargs["startID"] = maxID+1
+        kwargs['limit'] = 50
         kwargs["jsonDir"] = jsonDir
         kwargs["maxRetry"] = 5
+        kwargs["proxies"] = proxies
         mtDownJson(**kwargs)
         logging.info("成功完成下载任务！")
 
     @timeout_decorator.timeout(1500, use_signals=False)
-    def task6(db:DB,bkDir:str):
+    def task6(db: DB, bkDir: str):
         """
         数据库备份\n
         返回bkPath\n
@@ -316,7 +324,7 @@ def dailyJob(jobDir: str, dbPar: dict, mailPar: dict):
         return bkPath
 
     @timeout_decorator.timeout(600, use_signals=False)
-    def task7(db:DB,jsonDir:str):
+    def task7(db: DB, jsonDir: str):
         """
         数据库更新\n
         返回insertFail\n
@@ -343,7 +351,7 @@ def dailyJob(jobDir: str, dbPar: dict, mailPar: dict):
         return insertFail
 
     @timeout_decorator.timeout(300, use_signals=False)
-    def task8(db:DB,bkPath:str):
+    def task8(db: DB, bkPath: str):
         """
         数据库还原(更新出错后执行)\n
         """
@@ -353,7 +361,7 @@ def dailyJob(jobDir: str, dbPar: dict, mailPar: dict):
         logging.info("成功还原数据库!")
 
     @timeout_decorator.timeout(300, use_signals=False)
-    def task9(db:DB, maxID:int,workDir:str):
+    def task9(db: DB, maxID: int, workDir: str):
         """
         导出下载地址(更新成功后执行)\n
         返回urlFilePath\n
@@ -372,7 +380,7 @@ def dailyJob(jobDir: str, dbPar: dict, mailPar: dict):
         return urlFilePath
 
     @timeout_decorator.timeout(30, use_signals=False)
-    def task0(db:DB):
+    def task0(db: DB):
         """
         断开数据库连接(只要数据库连接成功就执行)\n
         """
@@ -380,13 +388,14 @@ def dailyJob(jobDir: str, dbPar: dict, mailPar: dict):
         db.execute(sql='''SET FOREIGN_KEY_CHECKS = 1 ''')
         db.close()
         logging.info("成功关闭数据库连接！")
-    
+
     @timeout_decorator.timeout(60, use_signals=False)
-    def sendMail(briefLog:str,detailLog:str,urlPath:str=None):
+    def sendMail(briefLog: str, detailLog: str, urlPath: str = None):
         """
         发送日志到邮箱\n
         """
         logging.info("发送日志到邮箱...")
+
         class Mail(QQMail):
             def creatMessage(self):
                 """创建邮件"""
@@ -396,22 +405,21 @@ def dailyJob(jobDir: str, dbPar: dict, mailPar: dict):
                 self.message['Subject'] = Header('服务器进程日志', 'utf-8')
 
                 # 邮件正文
-                content = MIMEText('这是今日的程序运行日志及url列表.','plain','utf-8')
+                content = MIMEText('这是今日的程序运行日志及url列表.', 'plain', 'utf-8')
                 self.message.attach(content)
 
                 # 添加附件
-                self.addAtt(briefLog,'brief.log')
-                self.addAtt(detailLog,'detail.log')
+                self.addAtt(briefLog, 'brief.log')
+                self.addAtt(detailLog, 'detail.log')
                 if urlPath:
                     self.addAtt(urlPath, 'urls.txt')
         newMail = Mail(**mailPar)
         newMail.send()
         logging.info("日志发送成功！")
 
-
     # 构造工作目录
     try:
-        workDir,bkDir,jsonDir = task1()
+        workDir, bkDir, jsonDir = task1()
         failFlag1 = False
     except Exception as e:
         logging.error("创建工作目录失败！")
@@ -454,7 +462,7 @@ def dailyJob(jobDir: str, dbPar: dict, mailPar: dict):
     # 多线程下载json数据
     if not failFlag4:
         try:
-            task5(jsonDir,maxID)
+            task5(jsonDir, maxID)
             failFlag5 = False
         except Exception as e:
             failFlag5 = True
@@ -465,7 +473,7 @@ def dailyJob(jobDir: str, dbPar: dict, mailPar: dict):
     # 数据库备份
     if not failFlag5:
         try:
-            bkPath = task6(db,bkDir)
+            bkPath = task6(db, bkDir)
             failFlag6 = False
         except Exception as e:
             failFlag6 = True
@@ -475,7 +483,7 @@ def dailyJob(jobDir: str, dbPar: dict, mailPar: dict):
     # 数据库更新
     if not failFlag6:
         try:
-            task7(db,jsonDir)
+            task7(db, jsonDir)
             failFlag7 = False
         except Exception as e:
             failFlag7 = True
@@ -485,7 +493,7 @@ def dailyJob(jobDir: str, dbPar: dict, mailPar: dict):
     # 数据库还原(更新出错后执行)
     if failFlag7 and not failFlag6:
         try:
-            task8(db,bkPath)
+            task8(db, bkPath)
             failFlag8 = False
         except Exception as e:
             failFlag8 = True
@@ -495,7 +503,7 @@ def dailyJob(jobDir: str, dbPar: dict, mailPar: dict):
     # 导出下载地址(更新成功后执行)
     if not failFlag7:
         try:
-            urlFilePath = task9(db,maxID,workDir)
+            urlFilePath = task9(db, maxID, workDir)
             failFlag9 = False
         except Exception as e:
             failFlag9 = True
@@ -511,11 +519,310 @@ def dailyJob(jobDir: str, dbPar: dict, mailPar: dict):
             failFlag0 = True
             logging.error("关闭数据库连接时发生错误！")
             logging.debug(str(e))
-    
+
     # 发送日志及url
     try:
-        sendMail('brief.log','detail.log',urlFilePath)
+        sendMail('brief.log', 'detail.log', urlFilePath)
     except Exception as e:
         logging.error("邮件发送失败！")
         logging.debug(str(e))
 
+
+def dataUpdate(jobDir: str, dbPar: dict, startID: int, endID: int, mailPar: dict, proxies: dict):
+    '''
+    更新数据库\n
+    指定起始id和终止id\n
+    包含完整的错误处理\n
+    1. 连接到数据库
+    2. 查询现有最大id号
+    3. ->多线程下载json数据
+    4. 数据库备份
+    5. 数据库更新
+    6. 数据库回滚
+    7. ->#导出下载地址#
+    8. 关闭数据库连接
+    9. 发邮件\n
+    工作目录结构:\n
+    jobDir\n
+    └─workDir\n
+    └─backup\n
+        └─json\n
+    '''
+    failFlag1 = True       # 构造工作目录失败标志
+    failFlag2 = True       # 链接到数据库失败标志
+    failFlag3 = True       # 设置外键失败标志
+    failFlag4 = True       # 设置最大id号失败标志
+    failFlag5 = True       # 多线程下载json数据失败标志
+    failFlag6 = True       # 数据库备份失败标志
+    failFlag7 = True       # 数据库更新失败标志
+    failFlag8 = True       # 数据库还原失败标志
+    failFlag9 = True       # 导出下载地址失败标志
+    failFlag0 = True       # 断开数据库连接失败标志
+
+    # urlFilePath = None      # url列表文件
+
+    @timeout_decorator.timeout(20, use_signals=False)
+    def task1():
+        """
+        构造工作目录\n
+        返回 (workDir,bkDir,jsonDir)\n
+        """
+        logging.info("正在创建工作目录...")
+        workID = int(time.time())
+        workDir = os.path.join(jobDir, 'works', str(workID))
+        bkDir = os.path.join(jobDir, "backup")
+        jsonDir = os.path.join(workDir, 'json')
+        if not os.path.exists(bkDir):
+            os.makedirs(bkDir)
+        if not os.path.exists(jsonDir):
+            os.makedirs(jsonDir)
+        logging.info("工作目录创建完成！")
+        return workDir, bkDir, jsonDir
+
+    # @timeout_decorator.timeout(30, use_signals=False)
+    def task2():
+        """
+        数据库连接测试\n
+        由于db不可序列化，固不使用timeout_decorator\n
+        """
+        logging.info("正在连接数据库...")
+        # db = DB("localhost", "root", "qo4hr[Pxm7W5", "konachan")
+        db = DB(**dbPar)
+        db.connect()
+        logging.info("成功连接到数据库！")
+        return db
+
+    @timeout_decorator.timeout(5, use_signals=False)
+    def task3(db: DB):
+        """
+        设置外键\n
+        """
+        db.execute(sql='''SET FOREIGN_KEY_CHECKS = 0 ''')
+        logging.info("成功设置外键!")
+
+    @timeout_decorator.timeout(10, use_signals=False)
+    def task4(db: DB) -> int:
+        """
+        查询最大id\n
+        返回maxID
+        """
+        sql = "SELECT MAX(id) FROM main"
+        db.execute(sql)
+        maxID = int(db.fetchall()[0][0])
+        logging.info("查询到最大ID："+str(maxID))
+        return maxID
+
+    @timeout_decorator.timeout(7200, use_signals=False)
+    def task5(jsonDir: str, startID: int, endID: int):
+        """
+        多线程下载json数据\n
+        """
+        logging.info("开始下载json...")
+        kwargs = {}
+        kwargs["threadNum"] = 10
+        kwargs["startID"] = startID
+        kwargs["endID"] = endID
+        kwargs["limit"] = 100
+        kwargs["jsonDir"] = jsonDir
+        kwargs["maxRetry"] = 5
+        kwargs["proxies"] = proxies
+        mtDownJson(**kwargs)
+        logging.info("成功完成下载任务！")
+
+    @timeout_decorator.timeout(600, use_signals=False)
+    def task6(db: DB, bkDir: str):
+        """
+        数据库备份\n
+        返回bkPath\n
+        """
+        logging.info("正在备份数据库...")
+        bkPath = db.dump(bkDir)
+        logging.info("数据库备份完毕!")
+        return bkPath
+
+    @timeout_decorator.timeout(2000, use_signals=False)
+    def task7(db: DB, jsonDir: str):
+        """
+        数据库更新\n
+        返回insertFail\n
+        """
+        logging.info("正在更新数据库...")
+        jsList = []
+        insertFail = []
+        for folderName, _, fileNames in os.walk(jsonDir):
+            for fileName in fileNames:
+                if fileName.endswith(".json"):
+                    jsList.append(os.path.join(folderName, fileName))
+        for file in jsList:
+            try:
+                jsFile = open(file, "r", encoding="utf-8")
+                data = json.load(jsFile)
+                jsFile.close()
+                insertData(db, 'main', data)
+            except Exception as e:
+                logging.error("json转储失败！")
+                logging.info("失败json: "+str(file))
+                logging.debug(str(e))
+                insertFail.append(file)
+        logging.info("数据库更新完毕！")
+        return insertFail
+
+    @timeout_decorator.timeout(300, use_signals=False)
+    def task8(db: DB, bkPath: str):
+        """
+        数据库还原(更新出错后执行)\n
+        """
+        logging.info("正在还原数据库...")
+        # bkPath = r"/home/kevin/Work/Test/backup/20210314-122255.zip"
+        db.restore(bkPath)
+        logging.info("成功还原数据库!")
+
+    @timeout_decorator.timeout(30, use_signals=False)
+    def task0(db: DB):
+        """
+        断开数据库连接(只要数据库连接成功就执行)\n
+        """
+        logging.info("正在关闭数据库连接...")
+        db.execute(sql='''SET FOREIGN_KEY_CHECKS = 1 ''')
+        db.close()
+        logging.info("成功关闭数据库连接！")
+
+    @timeout_decorator.timeout(60, use_signals=False)
+    def sendMail(briefLog: str, detailLog: str, urlPath: str = None):
+        """
+        发送日志到邮箱\n
+        """
+        logging.info("发送日志到邮箱...")
+
+        class Mail(QQMail):
+            def creatMessage(self):
+                """创建邮件"""
+                # 邮件头
+                self.message['From'] = Header('kevin-s', 'utf-8')
+                self.message['To'] = Header('kevin-r', 'utf-8')
+                self.message['Subject'] = Header('服务器进程日志', 'utf-8')
+
+                # 邮件正文
+                content = MIMEText('这是数据库更新日志.', 'plain', 'utf-8')
+                self.message.attach(content)
+
+                # 添加附件
+                self.addAtt(briefLog, 'brief.log')
+                self.addAtt(detailLog, 'detail.log')
+                if urlPath:
+                    self.addAtt(urlPath, 'urls.txt')
+        newMail = Mail(**mailPar)
+        newMail.send()
+        logging.info("日志发送成功！")
+
+    # 构造工作目录
+    try:
+        workDir, bkDir, jsonDir = task1()
+        failFlag1 = False
+    except Exception as e:
+        logging.error("创建工作目录失败！")
+        logging.debug(str(e))
+        failFlag1 = True
+
+    # 链接到数据库
+    if not failFlag1:
+        try:
+            db = task2()
+            failFlag2 = False
+        except Exception as e:
+            failFlag2 = True
+            logging.critical("连接数据库失败！")
+            logging.debug(str(e))
+            logging.info("********************************************")
+
+    # 设置外键
+    if not failFlag2:
+        try:
+            task3(db)
+            failFlag3 = False
+        except Exception as e:
+            failFlag3 = True
+            logging.critical("外键设置错误！")
+            logging.debug(str(e))
+            logging.info("********************************************")
+
+    # 查询最大id号
+    if not failFlag3:
+        try:
+            maxID = task4(db)
+            failFlag4 = False
+        except Exception as e:
+            failFlag4 = True
+            logging.critical("查询最大ID出错！")
+            logging.debug(str(e))
+            logging.info("********************************************")
+
+    # 多线程下载json数据
+    if not failFlag4:
+        try:
+            if endID > maxID:
+                endID = maxID
+            task5(jsonDir, startID, endID)
+            failFlag5 = False
+        except Exception as e:
+            failFlag5 = True
+            logging.error("下载出错！")
+            logging.debug(str(e))
+            logging.info("********************************************")
+
+    # 数据库备份
+    if not failFlag5:
+        try:
+            bkPath = task6(db, bkDir)
+            failFlag6 = False
+        except Exception as e:
+            failFlag6 = True
+            logging.error("备份数据库失败！")
+            logging.debug(str(e))
+
+    # 数据库更新
+    if not failFlag6:
+        try:
+            task7(db, jsonDir)
+            failFlag7 = False
+        except Exception as e:
+            failFlag7 = True
+            logging.critical("数据库更新失败！")
+            logging.debug(str(e))
+
+    # 数据库还原(更新出错后执行)
+    if failFlag7 and not failFlag6:
+        try:
+            task8(db, bkPath)
+            failFlag8 = False
+        except Exception as e:
+            failFlag8 = True
+            logging.critical("还原数据库失败！")
+            logging.debug(str(e))
+
+    # # 导出下载地址(更新成功后执行)
+    # if not failFlag7:
+    #     try:
+    #         urlFilePath = task9(db,maxID,workDir)
+    #         failFlag9 = False
+    #     except Exception as e:
+    #         failFlag9 = True
+    #         logging.error("导出url失败！")
+    #         logging.debug(str(e))
+
+    # 断开数据库连接(只要数据库连接成功就执行)
+    if not failFlag2:
+        try:
+            task0(db)
+            failFlag0 = False
+        except Exception as e:
+            failFlag0 = True
+            logging.error("关闭数据库连接时发生错误！")
+            logging.debug(str(e))
+
+    # 发送日志
+    try:
+        sendMail('brief.log', 'detail.log')
+    except Exception as e:
+        logging.error("邮件发送失败！")
+        logging.debug(str(e))
