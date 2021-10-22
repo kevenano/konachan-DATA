@@ -49,6 +49,8 @@ def schedulerPart(jobDir: str, dbPar: dict, mailPar: dict, trigerPar: dict, prox
         kwargs['startID'] = 250000
         kwargs['endID'] = 999999
         scheduler.add_job(func=dataUpdate, kwargs=copy.copy(kwargs))
+    elif jobFlag == 4:
+        scheduler.add_job(func=dailyJob, kwargs=copy.copy(kwargs))
     scheduler.start()
 
 
@@ -109,6 +111,8 @@ if __name__ == "__main__":
         jobFlag = 2
     elif jobName.lower() == "part":
         jobFlag = 3
+    elif jobName.lower() == "now":
+        jobFlag = 4
     else:
         print("No such job!")
         exit()
