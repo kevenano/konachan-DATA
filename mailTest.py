@@ -93,5 +93,5 @@ class Mail(QQMail):
 
 
 if __name__ == '__main__':
-    mail = Mail(sender='kevin-san@qq.com',passwd='gyuyuzsewsqaebba',receivers=["kevin_ali@aliyun.com"])
+    mail = Mail(sender='***',passwd='***',receivers=["***"])
     mail.send()
